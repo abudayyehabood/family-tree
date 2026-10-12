@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+# main is the real app at /<repo>/. The preview branch is built into /<repo>/preview/ with
+# VITE_PREVIEW=1, so it saves under its own key. Pages takes one site, built from main only,
+# so a push to preview asks main to rebuild both.
+on:
+  push:
+    branches: [main, preview]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  rebuild-from-main:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Build the preview branch into /preview/
+        run: |
+          if git ls-remote --exit-code origin refs/heads/preview >/dev/null; then
+            git fetch --depth 1 origin preview
+            git worktree add ../preview FETCH_HEAD
+            cd ../preview
+            npm ci
+            VITE_PREVIEW=1 npm run build
+            cp -r dist "$GITHUB_WORKSPACE/dist/preview"
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
