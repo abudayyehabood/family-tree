@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadTree, saveTree, type LoadResult, type Shape as SaveShape } from './model/storage'
-import { downloadJson, importJson } from './model/transfer'
+import { CAN_SHARE, downloadJson, importJson, shareJson } from './model/transfer'
 import { countNodes } from './model/validate'
 import type { TreeNode } from './model/types'
 import { commit, redo, startHistory, undo, type History } from './model/history'
@@ -47,6 +47,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const view = useRef<TreeViewHandle>(null)
   const [centerReq, setCenterReq] = useState<{ id: string } | null>(null)
+  const [clearing, setClearing] = useState(false)
 
   const root = hist?.present ?? null
 
@@ -137,6 +138,19 @@ export default function App() {
     setMessage(`تم الاستيراد: ${countNodes(r.root)} شخص`)
   }
 
+  // A backup file is downloaded first, so even this can be taken back by importing it.
+  function clearAll() {
+    if (!root) return
+    downloadJson(root)
+    try { localStorage.removeItem(ACTIVE_KEY) } catch { /* nothing saved, nothing to remove */ }
+    setHist(null)
+    setBoot({ status: 'empty' })
+    setSelected(null)
+    setWarnings([])
+    setClearing(false)
+    setMessage('تم مسح الشجرة. نزلت نسخة احتياطية في التنزيلات، يمكنك استيرادها لإرجاع الشجرة.')
+  }
+
   const selectedNode = root && selected ? findNode(root, selected) : null
   const selectedPath = root && selectedNode ? pathTo(root, selectedNode.id) : null
   const btn = 'rounded-full bg-white/15 px-3 py-1.5 text-sm font-bold text-white active:bg-white/30 disabled:opacity-30'
@@ -155,8 +169,13 @@ export default function App() {
             <button className={btn} onClick={() => step('redo')} disabled={!hist.future.length} title="إعادة (Ctrl+Y)">↷</button>
           </>}
           {root && <button className={btn} onClick={() => downloadJson(root)}>تصدير</button>}
+          {root && CAN_SHARE && <button className={btn} onClick={() => void shareJson(root)}>مشاركة</button>}
           {!demo && boot.status !== 'error' && <button className={btn} onClick={() => fileInput.current?.click()}>استيراد</button>}
         </div>
+        {/* kept small and apart from the others, and it asks to type a word first */}
+        {root && !demo && (
+          <button className="ms-4 rounded border border-red-300/60 px-1.5 text-xs text-red-200" onClick={() => setClearing(true)}>مسح الكل</button>
+        )}
       </header>
       {message && (
         <p role="status" className="flex items-center bg-amber-100 px-3 py-1 text-sm">
@@ -209,7 +228,10 @@ export default function App() {
         )}
       </main>
 
-      <input ref={fileInput} type="file" accept="application/json,.json" hidden
+      {clearing && root && <ClearDialog count={countNodes(root)} onCancel={() => setClearing(false)} onConfirm={clearAll} />}
+
+      {/* no accept filter: phones often label a .json from WhatsApp as an unknown type and grey it out */}
+      <input ref={fileInput} type="file" hidden
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void onImport(f) }} />
     </div>
   )
@@ -227,5 +249,26 @@ function NewTree({ onCreate }: { onCreate: (root: TreeNode) => void }) {
       </label>
       <button className="rounded bg-slate-800 px-3 py-2 text-white">ابدأ الشجرة</button>
     </form>
+  )
+}
+
+const WORD = 'مسح'
+
+function ClearDialog({ count, onCancel, onConfirm }: { count: number; onCancel: () => void; onConfirm: () => void }) {
+  const [typed, setTyped] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <form role="alertdialog" aria-label="مسح الشجرة" className="w-full max-w-sm space-y-3 rounded-lg bg-white p-4"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); if (typed.trim() === WORD) onConfirm() }}>
+        <p className="font-bold text-red-700">هل تريد مسح الشجرة كلها ({count} شخص)؟</p>
+        <p className="text-sm">ستنزل نسخة احتياطية أولاً. للمتابعة اكتب كلمة «{WORD}» ثم اضغط مسح.</p>
+        <input className="block w-full rounded border p-2" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+        <div className="flex gap-2">
+          <button type="button" className="flex-1 rounded bg-slate-800 px-3 py-2 text-white" onClick={onCancel}>لا، إلغاء</button>
+          <button className="rounded border border-red-600 px-3 py-2 text-red-700 disabled:opacity-30" disabled={typed.trim() !== WORD}>مسح</button>
+        </div>
+      </form>
+    </div>
   )
 }

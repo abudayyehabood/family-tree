@@ -5,6 +5,10 @@ import { exportJson, importJson } from '../src/model/transfer'
 import { generateTree } from '../src/synthetic/generator'
 import { STORAGE_KEY, type TreeNode } from '../src/model/types'
 import { CASES } from './fixtures'
+import { setCollapsed } from '../src/model/mutations'
+import { layoutTree } from '../src/layout/layout'
+
+const fakeMeasure = (t: string) => t.length * 7
 
 function memStore(init: Record<string, string> = {}) {
   const data = { ...init }
@@ -101,9 +105,29 @@ describe('import / export', () => {
     expect(importJson(text)).toEqual({ ok: true, root, warnings: [] })
   })
 
+  it('takes the raw backup too: bare root, { root }, and a file starting with a BOM', () => {
+    const root = generateTree({ size: 50, shape: 'wide' })
+    expect(importJson(JSON.stringify(root))).toEqual({ ok: true, root, warnings: [] })
+    expect(importJson(JSON.stringify({ root }))).toEqual({ ok: true, root, warnings: [] })
+    expect(importJson('\uFEFF' + exportJson(root))).toEqual({ ok: true, root, warnings: [] })
+  })
+
+  it('the other person gets the same tree: same order, same folds, same drawing', () => {
+    let root = generateTree({ size: 800, shape: 'deep' })
+    root = setCollapsed(root, root.children[0].children[0].id, true)
+    const r = importJson(exportJson(root))
+    if (!r.ok) throw new Error('import failed')
+    const order = (t: TreeNode): string[] => [t.id + t.name + (t.collapsed ?? ''), ...t.children.flatMap(order)]
+    expect(order(r.root)).toEqual(order(root))
+    const at = (l: ReturnType<typeof layoutTree>) => l.boxes.map((b) => [b.id, b.x, b.y, b.w])
+    expect(at(layoutTree(r.root, fakeMeasure))).toEqual(at(layoutTree(root, fakeMeasure)))
+  })
+
   it('rejects other files', () => {
     expect(importJson('nope').ok).toBe(false)
     expect(importJson('{"app":"other","version":1,"root":{}}').ok).toBe(false)
     expect(importJson('{"app":"arabic-family-tree","version":2,"root":{}}').ok).toBe(false)
+    expect(importJson('{"name":"x"}').ok).toBe(false)
+    expect(importJson('[1,2]').ok).toBe(false)
   })
 })
