@@ -6,7 +6,7 @@ import type { Layout } from './layout'
 export const MAX_BRANCH = 14 // px; half of it + bark must stay inside the 10px gap beside a stem
 export const TRUNK_GENS = 4 // generations 1-4 are drawn as one even trunk, 5 on as branches
 export const ROOT_W = 32 // px; generation 1 (founder to his wives): as thick as the top of the drawn trunk
-export const TRUNK_W = 20 // px; the extra over MAX_BRANCH hides under the cards beside it
+export const TRUNK_W = ROOT_W // generations 2-4: as thick as the trunk, all the way up
 export const BARK = 1.5 // dark outline on each side
 export const TRUNK_H = 150
 

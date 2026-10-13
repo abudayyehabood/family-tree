@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 html, body, #root { height: 100%; }
+/* an app, not a page: never scroll (a scrollbar flashing in would resize the tree) */
+html, body { overflow: hidden; }
 body { font-family: system-ui, "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif; }
 
 .ring-selected { stroke: #f59e0b; stroke-width: 4; }
@@ -9,3 +11,9 @@ body { font-family: system-ui, "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-ser
 
 /* lights going off (or back on) when someone is marked dead */
 .person rect, .person circle, .person text { transition: fill .8s ease, stroke .8s ease; }
+
+/* the edit panel slides in when it opens: up from the bottom on phones, in from the side on wide screens */
+.panel-in { animation: sheet-up .25s ease-out; }
+@media (min-width: 768px) { .panel-in { animation-name: side-in; } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes side-in { from { transform: translateX(100%); } }

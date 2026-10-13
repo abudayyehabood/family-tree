@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
-import { GEN_COLORS, hue } from '../src/ui/colors'
+import { describe, expect, it } from 'vitest'
+import { GEN_COLORS, hue, personColor } from '../src/ui/colors'
 
 const gap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b))
 const luminance = (hex: string) => {
@@ -19,4 +19,16 @@ it('15 generations, neighbours (also 15 -> 1) at least 60 degrees apart in hue',
 
 it('white text is readable on every colour (contrast >= 4.5)', () => {
   for (const c of GEN_COLORS) expect((1.05) / (luminance(c) + 0.05), c).toBeGreaterThanOrEqual(4.5)
+})
+
+describe('the dead: light off', () => {
+  it('same colour, only darker', () => {
+    for (let g = 1; g <= 15; g++) {
+      const live = personColor({ generation: g }), dead = personColor({ generation: g, dead: true })
+      expect(dead).not.toBe(live)
+      expect(Math.abs(hue(dead) - hue(live))).toBeLessThan(2)
+      const sum = (h: string) => [1, 3, 5].reduce((t, i) => t + parseInt(h.slice(i, i + 2), 16), 0)
+      expect(sum(dead)).toBeLessThan(sum(live))
+    }
+  })
 })

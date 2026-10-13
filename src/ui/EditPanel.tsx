@@ -60,9 +60,9 @@ export function EditPanel({ node, path, onPatch, onAddChild, onAddWife, onDelete
   }
 
   return (
-    <aside className="absolute inset-x-0 bottom-0 z-10 max-h-[50%] overflow-y-auto rounded-t-2xl bg-[#fffaf0] p-4 shadow-2xl
-      md:inset-x-auto md:bottom-auto md:top-0 md:start-0 md:h-full md:max-h-none md:w-80 md:rounded-none" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-3 flex items-start gap-2">
+    <aside className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4" onClick={(e) => e.stopPropagation()}>
+      {/* name and close stay on top while the rest scrolls */}
+      <div className="sticky top-0 z-10 -mx-4 mb-3 flex items-start gap-2 bg-[#fffaf0] px-4 pt-2 pb-2">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-xl font-bold">{node.name}</h2>
           <p className="text-sm text-stone-600">{relation}</p>

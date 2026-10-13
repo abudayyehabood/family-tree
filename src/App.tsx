@@ -67,6 +67,16 @@ export default function App() {
     if (centerReq) view.current?.centerOn(centerReq.id)
   }, [centerReq])
 
+  // a tap opens the panel; then make sure the card is not hidden under it
+  const [showReq, setShowReq] = useState<{ id: string } | null>(null)
+  useEffect(() => {
+    if (showReq) view.current?.showCard(showReq.id)
+  }, [showReq])
+  const tap = useCallback((id: string | null) => {
+    setSelected(id)
+    if (id) setShowReq({ id })
+  }, [])
+
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 3000)
@@ -193,21 +203,25 @@ export default function App() {
       <main className="relative min-h-0 flex-1">
         {layout && (
           <TreeView key={epoch} ref={view} layout={layout} selected={selected} flash={flash} anchor={anchor} panelOpen={!!selectedNode}
-            onSelect={setSelected} onToggleFold={onToggleFold} />
+            onSelect={tap} onToggleFold={onToggleFold} />
         )}
 
         {selectedNode && selectedPath && (
-          <EditPanel key={selectedNode.id} node={selectedNode} path={selectedPath}
-            onClose={() => setSelected(null)}
-            onPatch={(p: PersonPatch) => edit((r) => updatePerson(r, selectedNode.id, p), selectedNode.id)}
-            onAddChild={(g, name, mother) => edit((r) => addChild(r, selectedNode.id, g, name, mother).root, selectedNode.id)}
-            onAddWife={(name) => edit((r) => addWife(r, selectedNode.id, name).root, selectedNode.id)}
-            onToggleFold={() => toggleFold(selectedNode.id)}
-            onDelete={() => {
-              const parent = selectedPath[selectedPath.length - 2]
-              edit((r) => deletePerson(r, selectedNode.id), parent.id)
-              setSelected(parent.type === 'wife' ? selectedPath[selectedPath.length - 3].id : parent.id)
-            }} />
+          <div className="panel-in absolute inset-x-0 bottom-0 z-10 flex max-h-[50%] flex-col rounded-t-2xl bg-[#fffaf0] shadow-2xl
+            md:inset-x-auto md:bottom-auto md:top-0 md:start-0 md:h-full md:max-h-none md:w-80 md:rounded-none">
+            <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-stone-300 md:hidden" aria-hidden />
+            <EditPanel key={selectedNode.id} node={selectedNode} path={selectedPath}
+              onClose={() => setSelected(null)}
+              onPatch={(p: PersonPatch) => edit((r) => updatePerson(r, selectedNode.id, p), selectedNode.id)}
+              onAddChild={(g, name, mother) => edit((r) => addChild(r, selectedNode.id, g, name, mother).root, selectedNode.id)}
+              onAddWife={(name) => edit((r) => addWife(r, selectedNode.id, name).root, selectedNode.id)}
+              onToggleFold={() => toggleFold(selectedNode.id)}
+              onDelete={() => {
+                const parent = selectedPath[selectedPath.length - 2]
+                edit((r) => deletePerson(r, selectedNode.id), parent.id)
+                setSelected(parent.type === 'wife' ? selectedPath[selectedPath.length - 3].id : parent.id)
+              }} />
+          </div>
         )}
 
         {boot.status === 'error' && (

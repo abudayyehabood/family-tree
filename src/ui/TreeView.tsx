@@ -4,7 +4,7 @@ import { zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from 'd3-zoom'
 import { FONT_NAME, FONT_SUB, FONT_WIFE, subText, type Box, type Layout } from '../layout/layout'
 import { hiddenCount } from '../model/mutations'
 import { DOT_R, LABEL_FONT, LABEL_H, pickLabels } from '../layout/labels'
-import { genColor, personColor, tint } from './colors'
+import { DEAD_SHADE, personColor, shade, tint } from './colors'
 import { BARK, crown, jitter, ROOT_W, TRUNK_H } from '../layout/organic'
 import { branchPieces, pieceD } from '../layout/branches'
 import { measureText } from './measure'
@@ -13,12 +13,12 @@ const DOTS_BELOW = 0.35 // zoom at which cards turn into dots with names
 const MIN_K = 0.02
 const MAX_K = 3
 const BAR = 72 // room kept for the zoom bar
-const KEY = 44 // room kept for the generation key at the top
 const DOME = 40 // the green dome reaches this far past the outermost cards
 
 export interface TreeViewHandle {
   fit(): void
   centerOn(id: string): void
+  showCard(id: string): void
 }
 
 interface Props {
@@ -47,6 +47,7 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
     const svg = select(svgRef.current!)
     const z = zoom<SVGSVGElement, unknown>()
       .scaleExtent([MIN_K, MAX_K])
+      .on('start', (e) => { if (e.sourceEvent) cancelAnimationFrame(anim.current) }) // a finger wins over a glide
       .on('zoom', (e) => {
         gRef.current!.setAttribute('transform', e.transform.toString())
         setK(e.transform.k)
@@ -57,8 +58,24 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
   }, [])
 
   const size = () => svgRef.current!.getBoundingClientRect()
-  const setTransform = (x: number, y: number, s: number) =>
+  const anim = useRef(0)
+  const setTransform = (x: number, y: number, s: number) => {
+    cancelAnimationFrame(anim.current)
     select(svgRef.current!).call(zoomRef.current!.transform, zoomIdentity.translate(x, y).scale(s))
+  }
+  // a short glide instead of a jump
+  const glideTo = (x: number, y: number, s: number) => {
+    cancelAnimationFrame(anim.current)
+    const from = zoomTransform(svgRef.current!), t0 = performance.now(), ms = 350
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3)
+      const k = from.k + (s - from.k) * e
+      select(svgRef.current!).call(zoomRef.current!.transform,
+        zoomIdentity.translate(from.x + (x - from.x) * e, from.y + (y - from.y) * e).scale(k))
+      if (p < 1) anim.current = requestAnimationFrame(step)
+    }
+    anim.current = requestAnimationFrame(step)
+  }
 
   const dome = useMemo(() => crown(layout, DOME), [layout])
   const fit = () => {
@@ -68,8 +85,8 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
     const f = layout.boxes[0]
     const minX = Math.min(dome.minX, f.x - 250), maxX = Math.max(dome.maxX, f.x + 250)
     const w = maxX - minX, h = layout.maxY + TRUNK_H + 40 - dome.minY
-    const s = Math.max(MIN_K, Math.min(MAX_K, (width - 2 * pad) / w, (height - 2 * pad - BAR - KEY) / h))
-    setTransform(width / 2 - s * (minX + w / 2), KEY + (height - BAR - KEY) / 2 - s * (dome.minY + h / 2), s)
+    const s = Math.max(MIN_K, Math.min(MAX_K, (width - 2 * pad) / w, (height - 2 * pad - BAR) / h))
+    setTransform(width / 2 - s * (minX + w / 2), (height - BAR) / 2 - s * (dome.minY + h / 2), s)
   }
 
   const centerOn = (id: string) => {
@@ -80,10 +97,22 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
     // middle of the part of the screen the panel leaves free
     const cx = panelOpen && wide() ? (width - PANEL_W) / 2 : width / 2
     const cy = panelOpen && !wide() ? (height * 0.5) / 2 : (height - BAR) / 2
-    setTransform(cx - s * b.x, cy - s * b.y, s)
+    glideTo(cx - s * b.x, cy - s * b.y, s)
   }
 
-  useImperativeHandle(ref, () => ({ fit, centerOn }))
+  // After a tap opens the panel: if the card is now under the panel (or off screen), glide it into view.
+  const showCard = (id: string) => {
+    const b = layout.byId.get(id)
+    if (!b) return
+    const { width, height } = size()
+    const t = zoomTransform(svgRef.current!)
+    const right = wide() ? width - PANEL_W : width, bottom = wide() ? height - BAR : height * 0.5
+    const m = 16, x0 = t.applyX(b.x - b.w / 2), x1 = t.applyX(b.x + b.w / 2), y0 = t.applyY(b.y - b.h / 2), y1 = t.applyY(b.y + b.h / 2)
+    if (x0 >= m && x1 <= right - m && y0 >= m && y1 <= bottom - m) return
+    glideTo(t.x + right / 2 - t.applyX(b.x), t.y + bottom / 2 - t.applyY(b.y), t.k)
+  }
+
+  useImperativeHandle(ref, () => ({ fit, centerOn, showCard }))
 
   // New layout: fit the first time; afterwards keep the view, and keep the
   // anchor card exactly where it was on screen (folding must not jump).
@@ -105,7 +134,8 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
       const now = svg.getBoundingClientRect()
       if (!now.width || !now.height) return
       const t = zoomTransform(svg)
-      setTransform(t.x + (now.width - last.width) / 2, t.y + (now.height - last.height) / 2, t.k)
+      // straight to the zoom, so a glide in progress is not cut short
+      select(svg).call(zoomRef.current!.transform, zoomIdentity.translate(t.x + (now.width - last.width) / 2, t.y + (now.height - last.height) / 2).scale(t.k))
       last = now
     })
     ro.observe(svg)
@@ -117,42 +147,23 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
   // zoom in steps of ~19%, so names are re-picked only when it matters
   const kb = Math.pow(2, Math.round(Math.log2(k) * 4) / 4)
   const dots = kb < DOTS_BELOW
-  const [hlGen, setHlGen] = useState<number | null>(null)
-  const gens = useMemo(() => [...new Set(layout.boxes.map((b) => b.node.generation))].sort((a, b) => a - b), [layout])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-b from-[#d9eef6] via-[#eef5e4] to-[#f4f1e2]">
       <svg ref={svgRef} className="h-full w-full touch-none select-none" onClick={() => onSelect(null)}>
         <g ref={gRef}>
-          <g className={hlGen ? 'gen-dim' : ''} style={{ '--minsw': `${1.2 / kb}px` } as React.CSSProperties}>
+          <g style={{ '--minsw': `${1.2 / kb}px` } as React.CSSProperties}>
             <Canopy layout={layout} dome={dome.d} />
             <Trunk layout={layout} />
             <Edges layout={layout} />
             {dots
-              ? <><Dots layout={layout} k={kb} onSelect={onSelect} /><Labels layout={layout} k={kb} must={selected} prefer={hlGen} /></>
+              ? <><Dots layout={layout} k={kb} onSelect={onSelect} /><Labels layout={layout} k={kb} must={selected} prefer={null} /></>
               : <Cards layout={layout} onSelect={onSelect} onToggleFold={onToggleFold} />}
           </g>
           <Rings layout={layout} selected={selected} flash={flash} dotsAt={dots ? kb : null} />
         </g>
       </svg>
-      {hlGen && <style>{`.gen-dim .gen-item:not(.g${hlGen}) { opacity: .12 }`}</style>}
-      <Legend inset={panelOpen && wide() ? PANEL_W : 0} gens={gens} active={hlGen} onPick={(g) => setHlGen(g === hlGen ? null : g)} />
       <ZoomBar shift={panelOpen && wide() ? PANEL_W / 2 : 0} k={k} onZoom={zoomTo} onFit={fit} onCenter={selected ? () => centerOn(selected) : undefined} />
-    </div>
-  )
-}
-
-function Legend({ inset, gens, active, onPick }: { inset: number; gens: number[]; active: number | null; onPick(g: number): void }) {
-  return (
-    <div className="absolute top-2 flex items-center gap-1 overflow-x-auto [scrollbar-width:none] rounded-full bg-white/80 px-2 py-1 shadow" dir="rtl"
-      style={{ insetInlineStart: inset + 8, maxWidth: `calc(100% - ${inset + 16}px)` }}>
-      <span className="shrink-0 px-1 text-xs font-bold text-stone-700">الجيل</span>
-      {gens.map((g) => (
-        <button key={g} onClick={() => onPick(g)} aria-pressed={active === g} title={`الجيل ${g}`}
-          className={`grid h-7 min-w-7 shrink-0 place-items-center rounded-full px-1 text-xs font-bold text-white
-            ${active && active !== g ? 'opacity-30' : ''} ${active === g ? 'ring-2 ring-black ring-offset-1' : ''}`}
-          style={{ background: genColor(g) }}>{g}</button>
-      ))}
     </div>
   )
 }
@@ -324,7 +335,7 @@ const Card = memo(function Card({ b, onSelect, onToggleFold }: { b: Box; onSelec
   if (b.kind === 'wife') {
     return (
       <g className={cls} onClick={click}>
-        <rect x={x} y={y} width={b.w} height={b.h} rx={b.h / 2} fill={n.dead ? '#d6d3d1' : '#fcd581'} stroke={c} strokeWidth={2} />
+        <rect x={x} y={y} width={b.w} height={b.h} rx={b.h / 2} fill={n.dead ? shade('#fcd581', DEAD_SHADE) : '#fcd581'} stroke={c} strokeWidth={2} />
         <text x={b.x} y={b.y} dy="0.35em" textAnchor="middle" fill="#3b2a1e" style={font(FONT_WIFE)}>{n.name}</text>
         {n.collapsed && badge}
       </g>
@@ -336,7 +347,7 @@ const Card = memo(function Card({ b, onSelect, onToggleFold }: { b: Box; onSelec
     <g className={cls} onClick={click}>
       {/* men: solid square-ish card; daughters: light, rounder, coloured border */}
       <rect x={x} y={y} width={b.w} height={b.h} rx={man ? 6 : 14}
-        fill={man ? c : tint(c, 0.88)} stroke={c} strokeWidth={man ? 1 : 2} />
+        fill={man ? c : tint(c, n.dead ? 0.7 : 0.88)} stroke={c} strokeWidth={man ? 1 : 2} />
       <text x={b.x} y={sub ? b.y - 4 : b.y} dy="0.35em" textAnchor="middle" fill={man ? '#fff' : c} style={font(FONT_NAME)}>
         {n.name}
       </text>
