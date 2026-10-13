@@ -41,7 +41,7 @@ export function validateTree(value: unknown): ValidationResult {
     for (const k of ['born', 'died'] as const) {
       if (n[k] !== undefined && !Number.isInteger(n[k])) err(`${path}: ${k} must be a year`)
     }
-    for (const k of ['collapsed', 'unknown'] as const) {
+    for (const k of ['collapsed', 'unknown', 'dead'] as const) {
       if (n[k] !== undefined && typeof n[k] !== 'boolean') err(`${path}: ${k} must be true/false`)
     }
     if (n.husband !== undefined && typeof n.husband !== 'string') err(`${path}: husband must be text`)

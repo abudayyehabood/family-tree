@@ -10,6 +10,7 @@ export interface TreeNode {
   unknown?: boolean // placeholder wife when the mother's name is unknown
   born?: number
   died?: number
+  dead?: boolean // drawn with the light off (grey)
   husband?: string // daughters only: a text tag, never a branch
   children: TreeNode[]
 }

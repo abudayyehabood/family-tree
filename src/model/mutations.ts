@@ -49,6 +49,7 @@ export interface PersonPatch {
   died?: number | null
   gender?: 'male' | 'female'
   husband?: string | null
+  dead?: boolean
 }
 
 export function updatePerson(root: TreeNode, id: string, patch: PersonPatch): TreeNode {
@@ -68,6 +69,8 @@ export function updatePerson(root: TreeNode, id: string, patch: PersonPatch): Tr
       if (patch.husband === null || !patch.husband.trim()) delete m.husband
       else m.husband = patch.husband.trim()
     }
+    if (patch.dead === true) m.dead = true
+    else if (patch.dead === false) delete m.dead
     if (m.unknown && patch.name !== undefined && patch.name.trim() && patch.name.trim() !== UNKNOWN_WIFE_NAME) delete m.unknown
     return m
   })

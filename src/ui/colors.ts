@@ -20,6 +20,10 @@ export const GEN_COLORS = [
 
 export const genColor = (g: number) => GEN_COLORS[(g - 1) % GEN_COLORS.length]
 
+// The light is off: the dead are drawn in grey.
+export const DEAD = '#57534e'
+export const personColor = (n: { generation: number; dead?: boolean }) => (n.dead ? DEAD : genColor(n.generation))
+
 // Mix toward white: t = 0 keeps the colour, 1 is white.
 export function tint(hex: string, t: number): string {
   const n = parseInt(hex.slice(1), 16)

@@ -1,11 +1,11 @@
-import { memo, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
+import { memo, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from 'd3-zoom'
 import { FONT_NAME, FONT_SUB, FONT_WIFE, subText, type Box, type Layout } from '../layout/layout'
 import { hiddenCount } from '../model/mutations'
 import { DOT_R, LABEL_FONT, LABEL_H, pickLabels } from '../layout/labels'
-import { genColor, tint } from './colors'
-import { BARK, crown, jitter, TRUNK_H } from '../layout/organic'
+import { genColor, personColor, tint } from './colors'
+import { BARK, crown, jitter, ROOT_W, TRUNK_H } from '../layout/organic'
 import { branchPieces, pieceD } from '../layout/branches'
 import { measureText } from './measure'
 
@@ -96,6 +96,21 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
     const t = zoomTransform(svgRef.current!)
     setTransform(t.x + t.k * (a.x - b.x), t.y + t.k * (a.y - b.y), t.k)
   }, [layout]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Screen changed size (phone turned, window resized): keep the middle in the middle.
+  useEffect(() => {
+    const svg = svgRef.current!
+    let last = svg.getBoundingClientRect()
+    const ro = new ResizeObserver(() => {
+      const now = svg.getBoundingClientRect()
+      if (!now.width || !now.height) return
+      const t = zoomTransform(svg)
+      setTransform(t.x + (now.width - last.width) / 2, t.y + (now.height - last.height) / 2, t.k)
+      last = now
+    })
+    ro.observe(svg)
+    return () => ro.disconnect()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const zoomTo = (next: number) => select(svgRef.current!).call(zoomRef.current!.scaleTo, next)
 
@@ -210,7 +225,7 @@ const Canopy = memo(function Canopy({ layout, dome }: { layout: Layout; dome: st
 function Trunk({ layout }: { layout: Layout }) {
   const f = layout.boxes[0]
   const top = f.y + f.h / 2, bot = top + TRUNK_H, x = f.x
-  const tw = 16, bw = 46 // top matches the thickest main limb (MAX_TRUNK)
+  const tw = ROOT_W / 2 + BARK, bw = 46 // top as wide as the generation-1 wood it carries on into
   const body = `M${x - tw},${top} C${x - tw},${top + TRUNK_H * 0.4} ${x - bw * 0.7},${bot - 30} ${x - bw},${bot}
     L${x + bw},${bot} C${x + bw * 0.7},${bot - 30} ${x + tw},${top + TRUNK_H * 0.4} ${x + tw},${top} Z`
   const roots = [-1, 1].flatMap((s) => [
@@ -242,7 +257,7 @@ const Dots = memo(function Dots({ layout, k, onSelect }: { layout: Layout; k: nu
     <>
       {layout.boxes.map((b) => (
         <circle key={b.id} className={`gen-item g${b.node.generation} cursor-pointer`} cx={b.x} cy={b.y}
-          r={Math.min(DOT_R / k, Math.max(b.w, b.h) * 0.3) * (b.node.type === 'wife' ? 0.7 : 1)} fill={genColor(b.node.generation)}
+          r={Math.min(DOT_R / k, Math.max(b.w, b.h) * 0.3) * (b.node.type === 'wife' ? 0.7 : 1)} fill={personColor(b.node)}
           onClick={(e) => { e.stopPropagation(); onSelect(b.id) }} />
       ))}
     </>
@@ -254,11 +269,12 @@ const Labels = memo(function Labels({ layout, k, must, prefer }: { layout: Layou
   return (
     <g pointerEvents="none" style={{ fontSize: 12 / k, fontWeight: 700, fontFamily: LABEL_FONT.split(' ').slice(2).join(' ') }}>
       {labels.map((l) => {
-        const g = layout.byId.get(l.id)!.node.generation
+        const n = layout.byId.get(l.id)!.node
+        const g = n.generation
         return (
           <text key={l.id} className={`gen-item g${g}`} x={l.x} y={l.y} dy="0.35em" textAnchor="middle"
-            fill={genColor(g)} stroke="#fff" strokeWidth={3 / k} paintOrder="stroke" style={{ lineHeight: LABEL_H }}>
-            {layout.byId.get(l.id)!.node.name}
+            fill={personColor(n)} stroke="#fff" strokeWidth={3 / k} paintOrder="stroke" style={{ lineHeight: LABEL_H }}>
+            {n.name}
           </text>
         )
       })}
@@ -275,8 +291,8 @@ const Card = memo(function Card({ b, onSelect, onToggleFold }: { b: Box; onSelec
   const x = b.x - b.w / 2, y = b.y - b.h / 2
   const click = (e: React.MouseEvent) => { e.stopPropagation(); onSelect(b.id) }
   const n = b.node
-  const c = genColor(n.generation)
-  const cls = `gen-item g${n.generation} cursor-pointer`
+  const c = personColor(n)
+  const cls = `gen-item g${n.generation} cursor-pointer person${n.dead ? ' dead' : ''}`
   const badge = n.children.length > 0 && (
     <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onToggleFold(b.id) }}>
       <title>{n.collapsed ? 'فتح الفرع' : 'طي الفرع'}</title>
@@ -308,7 +324,7 @@ const Card = memo(function Card({ b, onSelect, onToggleFold }: { b: Box; onSelec
   if (b.kind === 'wife') {
     return (
       <g className={cls} onClick={click}>
-        <rect x={x} y={y} width={b.w} height={b.h} rx={b.h / 2} fill="#fcd581" stroke={c} strokeWidth={2} />
+        <rect x={x} y={y} width={b.w} height={b.h} rx={b.h / 2} fill={n.dead ? '#d6d3d1' : '#fcd581'} stroke={c} strokeWidth={2} />
         <text x={b.x} y={b.y} dy="0.35em" textAnchor="middle" fill="#3b2a1e" style={font(FONT_WIFE)}>{n.name}</text>
         {n.collapsed && badge}
       </g>

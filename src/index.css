@@ -6,3 +6,6 @@ body { font-family: system-ui, "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-ser
 .ring-selected { stroke: #f59e0b; stroke-width: 4; }
 .ring-flash { stroke: #dc2626; stroke-width: 4; animation: flash 0.7s ease-in-out 4 alternate; }
 @keyframes flash { from { stroke-opacity: 1; } to { stroke-opacity: 0.1; } }
+
+/* lights going off (or back on) when someone is marked dead */
+.person rect, .person circle, .person text { transition: fill .8s ease, stroke .8s ease; }

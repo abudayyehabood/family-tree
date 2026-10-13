@@ -89,6 +89,17 @@ export function EditPanel({ node, path, onPatch, onAddChild, onAddWife, onDelete
           </div>
         )}
 
+        {!node.unknown && (
+          <label className="flex cursor-pointer items-center justify-between rounded-lg bg-stone-100 px-3 py-2 text-sm font-bold">
+            <span>{node.gender === 'female' ? 'متوفاة' : 'متوفى'}</span>
+            <input type="checkbox" role="switch" className="peer sr-only" checked={!!node.dead}
+              onChange={(e) => save({ dead: e.target.checked })} />
+            <span className="relative h-6 w-11 rounded-full bg-stone-300 transition-colors peer-checked:bg-stone-700
+              after:absolute after:top-0.5 after:start-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all
+              peer-checked:after:start-[1.375rem]" aria-hidden />
+          </label>
+        )}
+
         {node.type === 'member' && !isRoot && (
           <div className="text-sm font-bold">
             <span>الجنس</span>

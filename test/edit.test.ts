@@ -5,6 +5,7 @@ import {
 import { commit, redo, startHistory, undo } from '../src/model/history'
 import { normalize, search } from '../src/search/normalize'
 import { validateTree } from '../src/model/validate'
+import { exportJson, importJson } from '../src/model/transfer'
 import { generateTree } from '../src/synthetic/generator'
 import type { TreeNode } from '../src/model/types'
 
@@ -47,6 +48,18 @@ describe('editing', () => {
     expect(findNode(t, r.id)!.died).toBeUndefined()
     expect(findNode(t, r.id)!.husband).toBeUndefined()
     clean(t)
+  })
+
+  it('dead switch: on sets the flag, off removes it, it survives export and import, other fields stay', () => {
+    const r = addChild(founder(), 'f', 'male', 'ابن')
+    let t = updatePerson(r.root, r.id, { dead: true })
+    expect(findNode(t, r.id)).toMatchObject({ name: 'ابن', dead: true })
+    clean(t)
+    const back = importJson(exportJson(t))
+    expect(back.ok && findNode(back.root, r.id)!.dead).toBe(true)
+    t = updatePerson(t, r.id, { dead: false })
+    expect('dead' in findNode(t, r.id)!).toBe(false)
+    expect(validateTree({ ...founder(), dead: 'yes' }).errors.length).toBe(1)
   })
 
   it('a man with wives cannot be turned into a daughter', () => {

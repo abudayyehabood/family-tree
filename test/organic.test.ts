@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { layoutTree, type Box } from '../src/layout/layout'
-import { BARK, branchWidth, carried, crown, MAX_BRANCH, MAX_TRUNK, TRUNK_GENS } from '../src/layout/organic'
+import { BARK, branchWidth, carried, crown, MAX_BRANCH, ROOT_W, TRUNK_W } from '../src/layout/organic'
 import { branchPieces, sample } from '../src/layout/branches'
 import { CASES } from './fixtures'
 
@@ -64,14 +64,14 @@ describe.each(CASES)('organic look: $name', ({ root }) => {
     expect(bad).toEqual([])
   })
 
-  it('generations 1-4 are trunk: every trunk piece is thicker than every branch piece', () => {
+  it('generation 1 as thick as the trunk top, 2-4 one even trunk, 5-6 thick limbs, 7 on thin twigs', () => {
     const pieces = branchPieces(L)
     const gen = (id: string) => L.byId.get(id)!.node.generation
-    for (const p of pieces) if (p.to) expect(p.main).toBe(gen(p.to) <= TRUNK_GENS)
-    const thinnestTrunk = Math.min(...pieces.filter((p) => p.main).map((p) => p.w))
-    const thickestBranch = Math.max(...pieces.filter((p) => !p.main).map((p) => p.w))
-    expect(thinnestTrunk).toBeGreaterThan(thickestBranch)
-    expect(Math.max(...pieces.map((p) => p.w))).toBeLessThanOrEqual(MAX_TRUNK)
+    const kind = (p: (typeof pieces)[0]) => (p.main ? 0 : p.w >= 7 ? 1 : 2)
+    for (const p of pieces) if (p.to) expect(kind(p)).toBe(gen(p.to) <= 4 ? 0 : gen(p.to) <= 6 ? 1 : 2)
+    for (const p of pieces) if (p.to) expect(p.w).toBe(gen(p.to) === 1 ? ROOT_W : gen(p.to) <= 4 ? TRUNK_W : p.w)
+    const limbs = pieces.filter((p) => kind(p) === 1).map((p) => p.w)
+    if (limbs.length) expect(Math.max(...limbs)).toBeLessThan(TRUNK_W)
   })
 
   it('the crown dome is one closed shape', () => {

@@ -1,4 +1,4 @@
-import { BARK, branchWidth, carried, jitter, MAX_TRUNK, TRUNK_GENS } from './organic'
+import { BARK, branchWidth, carried, jitter, ROOT_W, TRUNK_GENS, TRUNK_W } from './organic'
 import type { Layout } from './layout'
 
 // Drawing only: turns the layout's square branch lines into wood. Stems get
@@ -19,18 +19,22 @@ export interface Piece {
 
 const STEM_CLEAR = 10 // same as layout.ts: empty space beside a stem
 const MIN_W = 1.5
-const TWIG_MAX = 5 // generation 5 and up: clearly thinner than any trunk wood
-// trunk wood never gets thinner than this, so it reads as one trunk up to generation 4
-const trunkFloor = (gen: number) => Math.max(10, 18 - 2 * gen)
+const LIMB_GENS = 6 // generations 5-6 are the big limbs
+const LIMB = [7, 13] // limb thickness range, about half the trunk
+const TWIG_MAX = 5 // generation 7 on: thin twigs
 
 export function branchPieces(layout: Layout): Piece[] {
   const size = carried(layout)
   const out: Piece[] = []
-  // Wood leading to generations 1-4 is trunk; from generation 5 on it is branches.
+  // Three kinds of wood, like a real tree (roughly trunk 2 : limb 1 : twig 1/3):
+  // generation 1 carries on the drawn trunk, 2-4 one even trunk, 5-6 thick limbs, 7 on thin twigs.
+  // Limbs and twigs grow with the square root of what they carry, as real branches do.
   const gen = (id: string) => layout.byId.get(id)!.node.generation
   const isMain = (g: number) => g <= TRUNK_GENS
   const width = (people: number, g: number) =>
-    isMain(g) ? Math.max(trunkFloor(g), branchWidth(people, MAX_TRUNK)) : branchWidth(people, TWIG_MAX)
+    g === 1 ? ROOT_W : isMain(g) ? TRUNK_W
+      : g <= LIMB_GENS ? Math.min(LIMB[1], LIMB[0] + 0.8 * Math.sqrt(people - 1))
+        : branchWidth(people, TWIG_MAX)
   const stems = new Map<string, { x: number; y0: number; leave: { y: number; carry: number; g: number }[] }>()
 
   for (const e of layout.edges) {
@@ -83,8 +87,8 @@ function split(out: Piece[], from: string, to: string, [a, b, c, d]: P[], w: num
   const m = (u: P, v: P): P => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2]
   const ab = m(a, b), bc = m(b, c), cd = m(c, d), abc = m(ab, bc), bcd = m(bc, cd), mid = m(abc, bcd)
   out.push({ key: `${to}a`, from, to, w, twig, main, pts: [a, ab, abc, mid] })
-  // trunk wood tapers too, but never down to branch size
-  out.push({ key: `${to}b`, from, to, w: Math.max(main ? Math.min(w, 10) : MIN_W, w * 0.7), twig, main, pts: [mid, bcd, cd, d] })
+  // the trunk stays even; limbs and twigs taper, never below their own kind
+  out.push({ key: `${to}b`, from, to, w: main ? w : Math.max(w >= LIMB[0] ? LIMB[0] : MIN_W, w * 0.7), twig, main, pts: [mid, bcd, cd, d] })
 }
 
 export function pieceD({ pts }: Piece): string {
