@@ -1,11 +1,12 @@
 import { memo, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from 'd3-zoom'
-import { edgePath, FONT_NAME, FONT_SUB, FONT_WIFE, subText, type Box, type Layout } from '../layout/layout'
+import { FONT_NAME, FONT_SUB, FONT_WIFE, subText, type Box, type Layout } from '../layout/layout'
 import { hiddenCount } from '../model/mutations'
 import { DOT_R, LABEL_FONT, LABEL_H, pickLabels } from '../layout/labels'
 import { genColor, tint } from './colors'
-import { BARK, branchWidth, carried, jitter, TRUNK_H } from '../layout/organic'
+import { BARK, crown, jitter, TRUNK_H } from '../layout/organic'
+import { branchPieces, pieceD } from '../layout/branches'
 import { measureText } from './measure'
 
 const DOTS_BELOW = 0.35 // zoom at which cards turn into dots with names
@@ -13,6 +14,7 @@ const MIN_K = 0.02
 const MAX_K = 3
 const BAR = 72 // room kept for the zoom bar
 const KEY = 44 // room kept for the generation key at the top
+const DOME = 40 // the green dome reaches this far past the outermost cards
 
 export interface TreeViewHandle {
   fit(): void
@@ -58,15 +60,16 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
   const setTransform = (x: number, y: number, s: number) =>
     select(svgRef.current!).call(zoomRef.current!.transform, zoomIdentity.translate(x, y).scale(s))
 
+  const dome = useMemo(() => crown(layout, DOME), [layout])
   const fit = () => {
     const { width, height } = size()
     const pad = 24
     // the whole tree, trunk and grass included
     const f = layout.boxes[0]
-    const minX = Math.min(layout.minX, f.x - 250), maxX = Math.max(layout.maxX, f.x + 250)
-    const w = maxX - minX, h = layout.maxY + TRUNK_H + 40 - layout.minY
+    const minX = Math.min(dome.minX, f.x - 250), maxX = Math.max(dome.maxX, f.x + 250)
+    const w = maxX - minX, h = layout.maxY + TRUNK_H + 40 - dome.minY
     const s = Math.max(MIN_K, Math.min(MAX_K, (width - 2 * pad) / w, (height - 2 * pad - BAR - KEY) / h))
-    setTransform(width / 2 - s * (minX + w / 2), KEY + (height - BAR - KEY) / 2 - s * (layout.minY + h / 2), s)
+    setTransform(width / 2 - s * (minX + w / 2), KEY + (height - BAR - KEY) / 2 - s * (dome.minY + h / 2), s)
   }
 
   const centerOn = (id: string) => {
@@ -107,7 +110,7 @@ export function TreeView({ layout, selected, flash, anchor, panelOpen, onSelect,
       <svg ref={svgRef} className="h-full w-full touch-none select-none" onClick={() => onSelect(null)}>
         <g ref={gRef}>
           <g className={hlGen ? 'gen-dim' : ''} style={{ '--minsw': `${1.2 / kb}px` } as React.CSSProperties}>
-            <Canopy layout={layout} />
+            <Canopy layout={layout} dome={dome.d} />
             <Trunk layout={layout} />
             <Edges layout={layout} />
             {dots
@@ -173,15 +176,9 @@ function ZoomBar({ shift, k, onZoom, onFit, onCenter }: {
   )
 }
 
-// Bark-coloured branches, thicker the more people they carry. Thick ones
-// are painted first so thin twigs sit on top of the stem they leave.
+// Bark-coloured branches, thicker the more people they carry (see branches.ts).
 const Edges = memo(function Edges({ layout }: { layout: Layout }) {
-  const items = useMemo(() => {
-    const size = carried(layout)
-    return layout.edges
-      .map((e) => ({ key: e.to, d: edgePath(e, 16), w: branchWidth(size.get(e.to)!) }))
-      .sort((a, b) => b.w - a.w)
-  }, [layout])
+  const items = useMemo(() => branchPieces(layout).map((p) => ({ key: p.key, d: pieceD(p), w: p.w })), [layout])
   const width = (w: number) => ({ strokeWidth: `max(${w}px, var(--minsw))` })
   return (
     <g fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -193,14 +190,16 @@ const Edges = memo(function Edges({ layout }: { layout: Layout }) {
 })
 
 // Soft green clouds behind the cards: one disc per person, painted as one
-// layer so overlaps merge into a single crown.
-const Canopy = memo(function Canopy({ layout }: { layout: Layout }) {
+// layer so overlaps merge, on top of one dome around the whole crown.
+const Canopy = memo(function Canopy({ layout, dome }: { layout: Layout; dome: string }) {
   const discs = useMemo(() => layout.boxes.filter((b) => b.kind !== 'knot').map((b) => {
     const j = jitter(b.id)
     return { key: b.id, x: b.x + (j - 0.5) * 16, y: b.y - 6, r: (Math.max(b.w, b.h) * 0.55 + 14) * (0.85 + 0.3 * j) }
   }), [layout])
   return (
     <>
+      <path d={dome} fill="#7fb35d" opacity={0.28} />
+      <g fill="#5f9a4a" opacity={0.3}>{discs.map((d) => <circle key={d.key} cx={d.x} cy={d.y} r={d.r + 22} />)}</g>
       <g fill="#86b86a" opacity={0.35}>{discs.map((d) => <circle key={d.key} cx={d.x} cy={d.y} r={d.r} />)}</g>
       <g fill="#b9dc9e" opacity={0.35}>{discs.map((d) => <circle key={d.key} cx={d.x - d.r * 0.2} cy={d.y - d.r * 0.25} r={d.r * 0.6} />)}</g>
     </>
@@ -211,9 +210,9 @@ const Canopy = memo(function Canopy({ layout }: { layout: Layout }) {
 function Trunk({ layout }: { layout: Layout }) {
   const f = layout.boxes[0]
   const top = f.y + f.h / 2, bot = top + TRUNK_H, x = f.x
-  const tw = 14, bw = 34
-  const body = `M${x - tw},${top} C${x - tw},${top + TRUNK_H * 0.5} ${x - bw * 0.7},${bot - 30} ${x - bw},${bot}
-    L${x + bw},${bot} C${x + bw * 0.7},${bot - 30} ${x + tw},${top + TRUNK_H * 0.5} ${x + tw},${top} Z`
+  const tw = 16, bw = 46 // top matches the thickest main limb (MAX_TRUNK)
+  const body = `M${x - tw},${top} C${x - tw},${top + TRUNK_H * 0.4} ${x - bw * 0.7},${bot - 30} ${x - bw},${bot}
+    L${x + bw},${bot} C${x + bw * 0.7},${bot - 30} ${x + tw},${top + TRUNK_H * 0.4} ${x + tw},${top} Z`
   const roots = [-1, 1].flatMap((s) => [
     `M${x + s * bw * 0.6},${bot - 4} q${s * 40},6 ${s * 90},18`,
     `M${x + s * bw * 0.3},${bot - 2} q${s * 20},12 ${s * 45},30`,

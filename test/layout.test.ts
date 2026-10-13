@@ -110,11 +110,11 @@ describe.each(CASES)('layout rules: $name', ({ root }) => {
     }
   })
 
-  it('wives sit close above their husband', () => {
+  it('wives sit close above their husband (the founder leaves room for limbs)', () => {
     for (const b of L.boxes) {
       if (b.kind !== 'wife' && b.kind !== 'knot') continue
       const p = L.byId.get(b.parent!)!
-      expect((p.y - p.h / 2) - (b.y + b.h / 2)).toBeLessThanOrEqual(20)
+      expect((p.y - p.h / 2) - (b.y + b.h / 2)).toBeLessThanOrEqual(p.parent === null ? 60 : 20)
     }
   })
 

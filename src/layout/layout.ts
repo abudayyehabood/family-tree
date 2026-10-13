@@ -50,6 +50,7 @@ export const KNOT_W = 12
 const STEM_CLEAR = 10 // empty space on each side of a stem
 const FIRST_GAP = 12 // parent card -> first child on the stem
 const ONE_WIFE_GAP = 12 // man -> his wives, right above him
+const LIMB_GAP = 60 // founder -> his wives: room for the trunk to split into limbs
 const WIFE_GAP = 16 // between two wives' families in the row
 const STACK_GAP = 10 // between two rectangles on the same side
 // How a child's side is chosen (see place). Tuned on the synthetic trees.
@@ -141,8 +142,9 @@ function place(n: TreeNode, parent: string | null, measure: Measure, lean = TUNI
 
   if (n.type === 'member') {
     // Wives sit in one row right above their husband, joined by a short bar.
-    const bar = h + ONE_WIFE_GAP / 2
-    const y0 = h + ONE_WIFE_GAP
+    const gap = parent === null ? LIMB_GAP : ONE_WIFE_GAP
+    const bar = h + gap / 2
+    const y0 = h + gap
     const sizes = kids.map(visibleCount)
     const total = sizes.reduce((x, y) => x + y, 0)
     const big = sizes.indexOf(Math.max(...sizes))
@@ -276,19 +278,4 @@ export function layoutTree(root: TreeNode, measure: Measure = estimate): Layout 
   for (const e of s.edges) for (const p of e.points) p[1] = -p[1]
   const byId = new Map(s.boxes.map((b) => [b.id, b]))
   return { boxes: s.boxes, byId, edges: s.edges, minX: -s.left, maxX: s.right, minY: -s.top, maxY: 0 }
-}
-
-// Polyline with softly rounded corners.
-export function edgePath(e: Edge, r = 8): string {
-  const p = e.points
-  let d = `M${p[0][0]},${p[0][1]}`
-  for (let i = 1; i < p.length - 1; i++) {
-    const [ax, ay] = p[i - 1], [bx, by] = p[i], [cx, cy] = p[i + 1]
-    const l1 = Math.hypot(bx - ax, by - ay), l2 = Math.hypot(cx - bx, cy - by)
-    if (!l1 || !l2) continue
-    const k = Math.min(r, l1 / 2, l2 / 2)
-    d += `L${bx - ((bx - ax) / l1) * k},${by - ((by - ay) / l1) * k}Q${bx},${by} ${bx + ((cx - bx) / l2) * k},${by + ((cy - by) / l2) * k}`
-  }
-  const last = p[p.length - 1]
-  return d + `L${last[0]},${last[1]}`
 }

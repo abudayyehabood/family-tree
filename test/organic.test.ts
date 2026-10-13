@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { layoutTree, type Box } from '../src/layout/layout'
-import { BARK, branchWidth, carried } from '../src/layout/organic'
+import { BARK, branchWidth, carried, crown, MAX_BRANCH, MAX_TRUNK } from '../src/layout/organic'
+import { branchPieces, sample } from '../src/layout/branches'
 import { CASES } from './fixtures'
 
 // The painted branches are thick. Check the thick stroke (not just its centre
@@ -42,6 +43,52 @@ describe.each(CASES)('organic look: $name', ({ root }) => {
       }
     }
     expect(bad).toEqual([])
+  })
+
+  it('curved, tapered branches (with bark) stay off cards they do not belong to', () => {
+    const bad: string[] = []
+    for (const p of branchPieces(L)) {
+      // the trunk's line is painted thicker than the gap and hides partly under the
+      // cards beside it, on purpose: check its core keeps the normal clearance
+      const pts = sample(p), g = Math.min(p.w, p.main ? MAX_BRANCH : Infinity) / 2 + BARK
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1])
+      const near = L.boxes.filter((b) => b.x + b.w / 2 + g > Math.min(...xs) && b.x - b.w / 2 - g < Math.max(...xs)
+        && b.y + b.h / 2 + g > Math.min(...ys) && b.y - b.h / 2 - g < Math.max(...ys))
+      for (let i = 1; i < pts.length; i++) for (const box of near) {
+        if (box.id === p.from || box.id === p.to) continue
+        // stems and husband-to-wife curves pass the siblings that hang from them, as before
+        if (!p.twig && box.parent === p.from) continue
+        if (hitsGrown(pts[i - 1], pts[i], box, g)) bad.push(`${p.key} near ${box.id}`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('the trunk carries on up: the founder\'s line is thicker than any side branch', () => {
+    const pieces = branchPieces(L)
+    const main = Math.max(...pieces.filter((p) => p.main).map((p) => p.w))
+    const side = Math.max(...pieces.filter((p) => !p.main).map((p) => p.w))
+    expect(main).toBeGreaterThan(side)
+    expect(main).toBeLessThanOrEqual(MAX_TRUNK)
+  })
+
+  it('the crown dome is one closed shape', () => {
+    const c = crown(L, 40)
+    expect(c.d).toMatch(/^M.*Z$/)
+    expect(c.d).not.toContain('NaN')
+    // it reaches past every card, so "show all" (which frames the dome) shows them all
+    expect(c.minX).toBeLessThanOrEqual(L.minX)
+    expect(c.maxX).toBeGreaterThanOrEqual(L.maxX)
+    expect(c.minY).toBeLessThanOrEqual(L.minY)
+  })
+
+  it('curves never reach past the old square lines: the tree is no bigger', () => {
+    for (const p of branchPieces(L)) for (const [x, y] of sample(p)) {
+      expect(x).toBeGreaterThanOrEqual(L.minX - 0.01)
+      expect(x).toBeLessThanOrEqual(L.maxX + 0.01)
+      expect(y).toBeGreaterThanOrEqual(L.minY - 0.01)
+      expect(y).toBeLessThanOrEqual(L.maxY + 0.01)
+    }
   })
 })
 
