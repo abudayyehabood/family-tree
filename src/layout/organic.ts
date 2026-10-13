@@ -5,6 +5,7 @@ import type { Layout } from './layout'
 
 export const MAX_BRANCH = 14 // px; half of it + bark must stay inside the 10px gap beside a stem
 export const MAX_TRUNK = 24 // px; the main line may be this thick: the extra hides under the cards beside it
+export const TRUNK_GENS = 4 // generations 1-4 are drawn as trunk wood, 5 on as branches
 export const BARK = 1.5 // dark outline on each side
 export const TRUNK_H = 150
 

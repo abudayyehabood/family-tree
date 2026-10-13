@@ -1,4 +1,4 @@
-import { BARK, branchWidth, carried, jitter, MAX_TRUNK } from './organic'
+import { BARK, branchWidth, carried, jitter, MAX_TRUNK, TRUNK_GENS } from './organic'
 import type { Layout } from './layout'
 
 // Drawing only: turns the layout's square branch lines into wood. Stems get
@@ -14,49 +14,46 @@ export interface Piece {
   pts: P[] // 2 = straight, 3 = quadratic, 4 = cubic bezier
   w: number
   twig: boolean // leaves a stem sideways (the rest run along stems)
-  main: boolean // part of the trunk's line: drawn thicker, partly under the cards beside it
+  main: boolean // trunk wood (up to generation TRUNK_GENS): drawn thick, partly under the cards beside it
 }
 
 const STEM_CLEAR = 10 // same as layout.ts: empty space beside a stem
 const MIN_W = 1.5
+const TWIG_MAX = 5 // generation 5 and up: clearly thinner than any trunk wood
+// trunk wood never gets thinner than this, so it reads as one trunk up to generation 4
+const trunkFloor = (gen: number) => Math.max(10, 18 - 2 * gen)
 
 export function branchPieces(layout: Layout): Piece[] {
   const size = carried(layout)
   const out: Piece[] = []
-  // The trunk carries on up: from the founder, always into the biggest family.
-  const kids = new Map<string, string[]>()
-  for (const e of layout.edges) kids.set(e.from, [...(kids.get(e.from) ?? []), e.to])
-  const main = new Set<string>()
-  for (let id: string | undefined = layout.boxes[0]?.id; id; ) {
-    main.add(id)
-    id = (kids.get(id) ?? []).reduce<string | undefined>((a, b) => (a && size.get(a)! >= size.get(b)! ? a : b), undefined)
-  }
-  const root = layout.boxes[0]?.id
-  // every limb leaving the founder is thick too, like the trunk forking
-  const isMain = (from: string, to: string | null) => from === root || (main.has(from) && (to === null || main.has(to)))
-  const width = (people: number, from: string, to: string | null) => branchWidth(people, isMain(from, to) ? MAX_TRUNK : undefined)
-  const stems = new Map<string, { x: number; y0: number; leave: { y: number; carry: number }[] }>()
+  // Wood leading to generations 1-4 is trunk; from generation 5 on it is branches.
+  const gen = (id: string) => layout.byId.get(id)!.node.generation
+  const isMain = (g: number) => g <= TRUNK_GENS
+  const width = (people: number, g: number) =>
+    isMain(g) ? Math.max(trunkFloor(g), branchWidth(people, MAX_TRUNK)) : branchWidth(people, TWIG_MAX)
+  const stems = new Map<string, { x: number; y0: number; leave: { y: number; carry: number; g: number }[] }>()
 
   for (const e of layout.edges) {
     const p = e.points
     const carry = size.get(e.to)!
-    const w = width(carry, e.from, e.to)
+    const g = gen(e.to)
+    const w = width(carry, g)
     if (p.length === 4) {
       // husband to wife: one smooth S instead of up, across, up
       const [a, , , d] = p
-      split(out, e.from, e.to, [a, [a[0], p[1][1]], [d[0], p[2][1]], d], w, false, isMain(e.from, e.to))
+      split(out, e.from, e.to, [a, [a[0], p[1][1]], [d[0], p[2][1]], d], w, false, isMain(g))
       continue
     }
     const stem = stems.get(e.from) ?? { x: p[0][0], y0: p[0][1], leave: [] }
     stems.set(e.from, stem)
-    if (p.length === 2) { stem.leave.push({ y: p[1][1], carry }); continue }
+    if (p.length === 2) { stem.leave.push({ y: p[1][1], carry, g }); continue }
     // twig: start a little below the card, slant up, arrive level
     const [, [sx, ty], [ex]] = p
     const card = layout.byId.get(e.to)!
     const sy = ty + card.h * 0.4
     const dx = ex - sx
-    stem.leave.push({ y: sy, carry })
-    split(out, e.from, e.to, [[sx, sy], [sx + dx * 0.25, ty + (sy - ty) * 0.35], [sx + dx * 0.55, ty], [ex, ty]], w, true, isMain(e.from, e.to))
+    stem.leave.push({ y: sy, carry, g })
+    split(out, e.from, e.to, [[sx, sy], [sx + dx * 0.25, ty + (sy - ty) * 0.35], [sx + dx * 0.55, ty], [ex, ty]], w, true, isMain(g))
   }
 
   // Each stretch of stem carries everyone who leaves it higher up.
@@ -66,12 +63,12 @@ export function branchPieces(layout: Layout): Piece[] {
     let above = leave.reduce((t, l) => t + l.carry, 0)
     leave.forEach((l, i) => {
       if (l.y < y) {
-        const w = width(above, id, null)
+        const w = width(above, l.g)
         const len = y - l.y
         // long stretches bend a little, never past the empty space beside the stem
         const room = Math.max(0, STEM_CLEAR - w / 2 - BARK - 0.5)
         const bend = len > 40 ? Math.min(3, room) * (jitter(id + i) < 0.5 ? -2 : 2) : 0
-        out.push({ key: `${id}:${i}`, from: id, to: null, w, twig: false, main: isMain(id, null), pts: bend ? [[s.x, y], [s.x + bend, (y + l.y) / 2], [s.x, l.y]] : [[s.x, y], [s.x, l.y]] })
+        out.push({ key: `${id}:${i}`, from: id, to: null, w, twig: false, main: isMain(l.g), pts: bend ? [[s.x, y], [s.x + bend, (y + l.y) / 2], [s.x, l.y]] : [[s.x, y], [s.x, l.y]] })
         y = l.y
       }
       above -= l.carry
@@ -86,7 +83,8 @@ function split(out: Piece[], from: string, to: string, [a, b, c, d]: P[], w: num
   const m = (u: P, v: P): P => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2]
   const ab = m(a, b), bc = m(b, c), cd = m(c, d), abc = m(ab, bc), bcd = m(bc, cd), mid = m(abc, bcd)
   out.push({ key: `${to}a`, from, to, w, twig, main, pts: [a, ab, abc, mid] })
-  out.push({ key: `${to}b`, from, to, w: Math.max(MIN_W, w * 0.7), twig, main, pts: [mid, bcd, cd, d] })
+  // trunk wood tapers too, but never down to branch size
+  out.push({ key: `${to}b`, from, to, w: Math.max(main ? Math.min(w, 10) : MIN_W, w * 0.7), twig, main, pts: [mid, bcd, cd, d] })
 }
 
 export function pieceD({ pts }: Piece): string {
