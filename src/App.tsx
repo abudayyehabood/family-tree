@@ -244,8 +244,9 @@ export default function App() {
 
       {clearing && root && <ClearDialog count={countNodes(root)} onCancel={() => setClearing(false)} onConfirm={clearAll} />}
 
-      {/* no accept filter: phones often label a .json from WhatsApp as an unknown type and grey it out */}
-      <input ref={fileInput} type="file" hidden
+      {/* a non-media type makes Android open its Files picker, not the photo gallery;
+          octet-stream and text keep .json files saved by WhatsApp pickable */}
+      <input ref={fileInput} type="file" hidden accept=".json,application/json,text/plain,application/octet-stream"
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void onImport(f) }} />
     </div>
   )
