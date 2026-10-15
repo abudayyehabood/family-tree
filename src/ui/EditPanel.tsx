@@ -40,13 +40,7 @@ export function EditPanel({ node, path, onPatch, onAddChild, onAddWife, onDelete
   const save = (p: PersonPatch) => onPatch(p)
   const enter = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.currentTarget.blur() }
 
-  // who this person is, in words
-  const parent = path[path.length - 2]
-  const grand = path[path.length - 3]
-  const relation = node.type === 'wife'
-    ? `زوجة ${parent?.name ?? ''}`
-    : isRoot ? 'المؤسس'
-    : `${node.gender === 'male' ? 'ابن' : 'بنت'} ${grand?.name ?? ''}${parent && !parent.unknown ? ` و${parent.name}` : ''}`
+  const relation = relationOf(node, path)
 
   const confirmAdd = () => {
     if (!adding) return
@@ -61,14 +55,7 @@ export function EditPanel({ node, path, onPatch, onAddChild, onAddWife, onDelete
 
   return (
     <aside className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4" onClick={(e) => e.stopPropagation()}>
-      {/* name and close stay on top while the rest scrolls */}
-      <div className="sticky top-0 z-10 -mx-4 mb-3 flex items-start gap-2 bg-[#fffaf0] px-4 pt-2 pb-2">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xl font-bold">{node.name}</h2>
-          <p className="text-sm text-stone-600">{relation}</p>
-        </div>
-        <button className="grid h-10 w-10 place-items-center rounded-full bg-stone-200 text-xl" onClick={onClose} aria-label="إغلاق">×</button>
-      </div>
+      <Head node={node} relation={relation} onClose={onClose} />
 
       <div className="space-y-3">
         <label className="block text-sm font-bold">الاسم
@@ -177,6 +164,54 @@ export function EditPanel({ node, path, onPatch, onAddChild, onAddWife, onDelete
             </div>
           )}
         </div>
+      )}
+    </aside>
+  )
+}
+
+// who this person is, in words
+function relationOf(node: TreeNode, path: TreeNode[]): string {
+  const parent = path[path.length - 2]
+  const grand = path[path.length - 3]
+  return node.type === 'wife'
+    ? `زوجة ${parent?.name ?? ''}`
+    : path.length === 1 ? 'المؤسس'
+    : `${node.gender === 'male' ? 'ابن' : 'بنت'} ${grand?.name ?? ''}${parent && !parent.unknown ? ` و${parent.name}` : ''}`
+}
+
+// name and close stay on top while the rest scrolls
+function Head({ node, relation, onClose }: { node: TreeNode; relation: string; onClose(): void }) {
+  return (
+    <div className="sticky top-0 z-10 -mx-4 mb-3 flex items-start gap-2 bg-[#fffaf0] px-4 pt-2 pb-2">
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-xl font-bold">{node.name}</h2>
+        <p className="text-sm text-stone-600">{relation}</p>
+      </div>
+      <button className="grid h-10 w-10 place-items-center rounded-full bg-stone-200 text-xl" onClick={onClose} aria-label="إغلاق">×</button>
+    </div>
+  )
+}
+
+// Relatives with the view link: the same facts, nothing to change.
+export function ViewPanel({ node, path, onToggleFold, onClose }: Pick<Props, 'node' | 'path' | 'onToggleFold' | 'onClose'>) {
+  const years = node.born || node.died ? `${node.born ?? '؟'} – ${node.died ?? ''}` : ''
+  const facts = [
+    years && ['السنوات', years],
+    node.dead && ['', node.gender === 'female' ? 'متوفاة' : 'متوفى'],
+    node.husband && ['الزوج', node.husband],
+  ].filter(Boolean) as [string, string][]
+  return (
+    <aside className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4" onClick={(e) => e.stopPropagation()}>
+      <Head node={node} relation={relationOf(node, path)} onClose={onClose} />
+      {facts.length > 0 && (
+        <dl className="space-y-1 text-sm">
+          {facts.map(([k, v]) => <div key={k + v} className="flex gap-2">{k && <dt className="font-bold">{k}:</dt>}<dd dir="auto">{v}</dd></div>)}
+        </dl>
+      )}
+      {node.children.length > 0 && (
+        <button className={`${btn} mt-4 w-full bg-stone-200`} onClick={onToggleFold}>
+          {node.collapsed ? `فتح الفرع (${hiddenCount(node)})` : 'طي الفرع'}
+        </button>
       )}
     </aside>
   )

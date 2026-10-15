@@ -8,7 +8,9 @@ import { addChild, addWife, deletePerson, findNode, pathTo, reveal, setCollapsed
 import { generateTree, type Shape } from './synthetic/generator'
 import { layoutTree } from './layout/layout'
 import { TreeView, type TreeViewHandle } from './ui/TreeView'
-import { EditPanel } from './ui/EditPanel'
+import { EditPanel, ViewPanel } from './ui/EditPanel'
+import { CloudBar } from './ui/CloudBar'
+import { CLOUD_ON } from './cloud/config'
 import { SearchBox } from './ui/SearchBox'
 import { measureText } from './ui/measure'
 import { ACTIVE_KEY, IS_PREVIEW } from './model/where'
@@ -28,14 +30,17 @@ function firstLoad(): LoadResult {
   return real.status === 'ok' ? real : own
 }
 
-type Boot = Exclude<LoadResult, { status: 'ok' }> | { status: 'ok' }
+// ?view=<id>: a relative's read-only copy of the editor's online tree. Never saved here.
+const VIEW_ID = CLOUD_ON ? new URLSearchParams(location.search).get('view') : null
+
+type Boot = Exclude<LoadResult, { status: 'ok' }> | { status: 'ok' } | { status: 'loading' } | { status: 'gone'; text: string }
 
 export default function App() {
   const [demo] = useState(demoFromUrl)
   const [first] = useState<LoadResult>(() =>
-    demo ? { status: 'ok', root: demo, warnings: [], shape: 'bare' } : firstLoad(),
+    demo ? { status: 'ok', root: demo, warnings: [], shape: 'bare' } : VIEW_ID ? { status: 'empty' } : firstLoad(),
   )
-  const [boot, setBoot] = useState<Boot>(first.status === 'ok' ? { status: 'ok' } : first)
+  const [boot, setBoot] = useState<Boot>(first.status === 'ok' ? { status: 'ok' } : VIEW_ID ? { status: 'loading' } : first)
   const [hist, setHist] = useState<History | null>(first.status === 'ok' ? startHistory(first.root) : null)
   const [saveShape] = useState<SaveShape>(first.status === 'ok' ? first.shape : 'bare')
   const [warnings, setWarnings] = useState(first.status === 'ok' ? first.warnings : [])
@@ -52,13 +57,22 @@ export default function App() {
   const root = hist?.present ?? null
 
   useEffect(() => {
-    if (!root || demo) return
+    if (!root || demo || VIEW_ID) return
     try {
       saveTree(localStorage, root, saveShape, ACTIVE_KEY)
     } catch (e) {
       setMessage(`لم يتم الحفظ: ${String(e)}`)
     }
   }, [root, demo, saveShape])
+
+  useEffect(() => {
+    if (!VIEW_ID) return
+    import('./cloud/cloud').then((c) => c.fetchTree(VIEW_ID)).then((r) => {
+      if (r?.ok) newTree(r.root, [])
+      else setBoot({ status: 'gone', text: r ? 'الشجرة المنشورة فيها خطأ.' : 'لا توجد شجرة على هذا الرابط. تأكد من الرابط كاملاً.' })
+    }, () => setBoot({ status: 'gone', text: 'تعذر تحميل الشجرة. تحقق من الإنترنت ثم حدّث الصفحة.' }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const layout = useMemo(() => (root ? layoutTree(root, measureText) : null), [root])
 
@@ -172,18 +186,20 @@ export default function App() {
         {root && <span className="text-sm opacity-80">{countNodes(root)} شخص</span>}
         {IS_PREVIEW && !demo && <span className="rounded-full bg-sky-300 px-2 text-sm text-[#3b2a1e]">نسخة تجريبية، شجرتك الأصلية لا تتغير</span>}
         {demo && <span className="rounded-full bg-amber-300 px-2 text-sm text-[#3b2a1e]">تجربة، لا يتم الحفظ</span>}
+        {VIEW_ID && <span className="rounded-full bg-sky-200 px-2 text-sm text-[#3b2a1e]">للعرض فقط</span>}
         {root && <SearchBox root={root} onPick={pick} />}
         <div className="ms-auto flex gap-2">
-          {hist && <>
+          {hist && !VIEW_ID && <>
             <button className={btn} onClick={() => step('undo')} disabled={!hist.past.length} title="تراجع (Ctrl+Z)">↶ تراجع</button>
             <button className={btn} onClick={() => step('redo')} disabled={!hist.future.length} title="إعادة (Ctrl+Y)">↷</button>
           </>}
-          {root && <button className={btn} onClick={() => downloadJson(root)}>تصدير</button>}
-          {root && CAN_SHARE && <button className={btn} onClick={() => void shareJson(root)}>مشاركة</button>}
-          {!demo && boot.status !== 'error' && <button className={btn} onClick={() => fileInput.current?.click()}>استيراد</button>}
+          {root && CLOUD_ON && !demo && !VIEW_ID && !IS_PREVIEW && <CloudBar root={root} btn={btn} say={setMessage} />}
+          {root && !VIEW_ID && <button className={btn} onClick={() => downloadJson(root)}>تصدير</button>}
+          {root && !VIEW_ID && CAN_SHARE && <button className={btn} onClick={() => void shareJson(root)}>مشاركة</button>}
+          {!demo && !VIEW_ID && boot.status !== 'error' && <button className={btn} onClick={() => fileInput.current?.click()}>استيراد</button>}
         </div>
         {/* kept small and apart from the others, and it asks to type a word first */}
-        {root && !demo && (
+        {root && !demo && !VIEW_ID && (
           <button className="ms-4 rounded border border-red-300/60 px-1.5 text-xs text-red-200" onClick={() => setClearing(true)}>مسح الكل</button>
         )}
       </header>
@@ -210,6 +226,8 @@ export default function App() {
           <div className="panel-in absolute inset-x-0 bottom-0 z-10 flex max-h-[50%] flex-col rounded-t-2xl bg-[#fffaf0] shadow-2xl
             md:inset-x-auto md:bottom-auto md:top-0 md:start-0 md:h-full md:max-h-none md:w-80 md:rounded-none">
             <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-stone-300 md:hidden" aria-hidden />
+            {VIEW_ID ? <ViewPanel key={selectedNode.id} node={selectedNode} path={selectedPath}
+              onClose={() => setSelected(null)} onToggleFold={() => toggleFold(selectedNode.id)} /> :
             <EditPanel key={selectedNode.id} node={selectedNode} path={selectedPath}
               onClose={() => setSelected(null)}
               onPatch={(p: PersonPatch) => edit((r) => updatePerson(r, selectedNode.id, p), selectedNode.id)}
@@ -220,7 +238,7 @@ export default function App() {
                 const parent = selectedPath[selectedPath.length - 2]
                 edit((r) => deletePerson(r, selectedNode.id), parent.id)
                 setSelected(parent.type === 'wife' ? selectedPath[selectedPath.length - 3].id : parent.id)
-              }} />
+              }} />}
           </div>
         )}
 
@@ -236,6 +254,9 @@ export default function App() {
             }}>تنزيل نسخة من البيانات كما هي</button>
           </section>
         )}
+
+        {boot.status === 'loading' && <p className="m-4 text-stone-600">جاري تحميل الشجرة…</p>}
+        {boot.status === 'gone' && <p className="m-4 max-w-xl rounded border border-red-400 bg-red-50 p-3 font-bold">{boot.text}</p>}
 
         {boot.status === 'empty' && (
           <div className="m-4 max-w-xl"><NewTree onCreate={(r) => newTree(r, [])} /></div>

@@ -1,0 +1,14 @@
+rules_version = '2';
+// Paste into Firebase console > Firestore > Rules, with the editor's Gmail address.
+// Anyone with the view link can read the one tree; only the editor can change it.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /trees/{uid} {
+      allow get: if true;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email == "EDITOR@gmail.com"
+        && request.auth.token.email_verified == true;
+    }
+  }
+}
