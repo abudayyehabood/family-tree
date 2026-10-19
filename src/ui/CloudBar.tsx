@@ -25,8 +25,8 @@ export function CloudBar({ root, btn, say }: { root: TreeNode; btn: string; say(
   const busy = useRef(false)
   const again = useRef(false)
 
-  async function publish(id: string) {
-    if (busy.current) return void (again.current = true)
+  async function publish(id: string): Promise<boolean> {
+    if (busy.current) { again.current = true; return true }
     busy.current = true
     setStatus('saving')
     try {
@@ -35,9 +35,11 @@ export function CloudBar({ root, btn, say }: { root: TreeNode; btn: string; say(
         await (await cloud()).publishTree(id, latest.current)
       } while (again.current)
       setStatus('ok')
+      return true
     } catch (e) {
       setStatus('error')
-      say(failText(e))
+      say(failText(e, (await cloud()).signedInEmail()))
+      return false
     } finally {
       busy.current = false
     }
@@ -69,13 +71,14 @@ export function CloudBar({ root, btn, say }: { root: TreeNode; btn: string; say(
       const online = await c.fetchTree(u.uid)
       if (online?.ok && u.uid !== uid &&
         !confirm(`توجد شجرة منشورة (${countNodes(online.root)} شخص). استبدالها بشجرة هذا الهاتف (${countNodes(root)} شخص)؟`)) return
-      try { localStorage.setItem(LINK_KEY, u.uid) } catch { /* still works until the page closes */ }
       setUid(u.uid)
-      await publish(u.uid)
+      if (!(await publish(u.uid))) return // the reason is already on screen
+      // linked only once something is really online
+      try { localStorage.setItem(LINK_KEY, u.uid) } catch { /* still works until the page closes */ }
       setReady(true)
       say('تم النشر. أرسل «رابط الأقارب» لمن تريد، وكل تعديل بعد الآن يصلهم وحده.')
     } catch (e) {
-      say(failText(e))
+      say(failText(e, null))
     }
   }
 
@@ -96,13 +99,14 @@ export function CloudBar({ root, btn, say }: { root: TreeNode; btn: string; say(
   return <>
     <button className={`${btn} ${status === 'error' ? 'bg-red-500/60' : ''}`} disabled={status === 'saving' || status === 'checking'}
       onClick={() => void publish(uid)}>{label}</button>
-    <button className={btn} onClick={() => void shareLink()}>رابط الأقارب</button>
+    {status === 'ok' && <button className={btn} onClick={() => void shareLink()}>رابط الأقارب</button>}
   </>
 }
 
-function failText(e: unknown): string {
+function failText(e: unknown, email: string | null): string {
   const code = (e as { code?: string }).code ?? ''
-  if (code === 'permission-denied') return 'هذا الحساب غير مسموح له بالنشر. النشر لحساب واحد فقط.'
+  if (code === 'permission-denied') return `هذا الحساب (${email ?? '؟'}) غير مسموح له بالنشر. سجل الدخول بالبريد المكتوب في قواعد Firebase.`
+  if (code === 'too-big') return 'الشجرة أكبر من الحد المسموح للنشر.'
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'تم إلغاء تسجيل الدخول.'
   if (code === 'auth/popup-blocked') return 'المتصفح منع نافذة تسجيل الدخول. اسمح بالنوافذ المنبثقة ثم أعد المحاولة.'
   return `لم يتم النشر، تحقق من الإنترنت ثم اضغط «لم يُنشر» للمحاولة مجدداً. (${code || String(e)})`

@@ -5,7 +5,7 @@ import { initializeApp } from 'firebase/app'
 import { connectAuthEmulator, getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, type User } from 'firebase/auth'
 import { connectFirestoreEmulator, doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore/lite'
 import { FIREBASE_CONFIG, USE_EMULATOR } from './config'
-import { exportJson, importJson, type ImportResult } from '../model/transfer'
+import { importJson, toExportFile, type ImportResult } from '../model/transfer'
 import { countNodes } from '../model/validate'
 import type { TreeNode } from '../model/types'
 
@@ -27,9 +27,16 @@ export async function fetchTree(uid: string): Promise<ImportResult | null> {
   return importJson(String(snap.data().json))
 }
 
+// One Firestore text field holds at most about 1 MB: compact JSON, and a clear error past that.
+const MAX_BYTES = 1_000_000
+
 export async function publishTree(uid: string, root: TreeNode): Promise<void> {
-  await setDoc(treeDoc(uid), { json: exportJson(root), count: countNodes(root), updatedAt: serverTimestamp() })
+  const json = JSON.stringify(toExportFile(root))
+  if (new TextEncoder().encode(json).length > MAX_BYTES) throw Object.assign(new Error('tree too big'), { code: 'too-big' })
+  await setDoc(treeDoc(uid), { json, count: countNodes(root), updatedAt: serverTimestamp() })
 }
+
+export const signedInEmail = () => auth.currentUser?.email ?? null
 
 // Resolves once Firebase knows whether this phone is still signed in.
 export function signedInUser(): Promise<User | null> {
